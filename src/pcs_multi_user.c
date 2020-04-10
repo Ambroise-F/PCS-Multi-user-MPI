@@ -611,9 +611,7 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 	{
 		MPI_Recv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&status);
 		unpack(payload,&thread_num,&userid1,b,xDist,nb_bits,trailling_bits);
-
-		//gmp_printf("S : recv b : %Zd\n",b);
-		//gmp_printf("S : recv xD : %Zd\n",xDist);
+		tag = thread_num + TAG_THREAD_OFFSET;
 		/*
 		MPI_Recv(&thread_num, 1, MPI_INT,      MPI_ANY_SOURCE,    TAG_START, MPI_COMM_WORLD, &status); // should be Irecv to allow multithreaded storing
 		//printf("S : recv thread_num : %d\n",thread_num);
@@ -627,7 +625,6 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 
 		*/
 		coll = struct_add_mu(b2,&userid2,b,userid1,xDist,xDist_str);
-
 
 		//printf("coll : %d\n",coll );
 		nb_pts++;
@@ -730,6 +727,7 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 				char * payload;
 				size_t size_vect;
 
+
 				//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thread_num,userid1,b,xDist);
 				payload = pack(&size_vect,thread_num, userid1, b, xDist, nb_bits, trailling_bits);
 				//printf("size_vect = %ld (should be 4+2+4+3 = 13)\n",size_vect);
@@ -739,7 +737,7 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 				//unpack(payload,&thr,&user,bb,xx,nb_bits,trailling_bits);
 				//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thr,user,bb,xx);
 
-				MPI_Isend(&payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
+				MPI_Isend(payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
 
 				flagreq = 0;
 				while(!flagreq && !end) // while not sent and not finished
@@ -750,11 +748,12 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 				{
 					break;
 				}
-				free(payload);
 
+				free(payload);
+				tag = thread_num + TAG_THREAD_OFFSET;
 				MPI_Irecv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,&req);
 				flagreq = 0;
-				while(!flagreq && !end) // while not sent and not finished
+				while(!flagreq && !end) // while not received and not finished
 	      {
 					MPI_Test(&req,&flagreq,NULL);
 	      }
