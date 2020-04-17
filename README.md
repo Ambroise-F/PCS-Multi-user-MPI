@@ -23,7 +23,8 @@ An executable ```pcs_exec``` will be created in the project's home directory.
 
 ### Run
 
-mpirun -np m pcs_exec [args]
+mpirun -np [nb_machines] pcs_exec [args]
+
 
 
 ### Command-line arguments
