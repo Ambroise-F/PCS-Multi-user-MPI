@@ -10,13 +10,21 @@ GMP - The GNU Multiple Precision Arithmetic Library
 
 OpenMP for parallel programming
 
+Open MPI
+
 ### Compiling in Linux and Mac OS
 ```bash
 mkdir build && cd build
+export CC=mpicc
 cmake ..
 make
 ```
 An executable ```pcs_exec``` will be created in the project's home directory.
+
+### Run
+
+mpirun -np m pcs_exec [args]
+
 
 ### Command-line arguments
 By default, the program solves the ECDLP for a random point P and a random secret key x. The code has several configuration options:
@@ -39,3 +47,20 @@ The data from the experimental results is written in the ```results``` directory
 ``` f s t d l time_measured ```.
 
 The script ```refresh_avg.sh``` computes average values for each existing configuration and stores them in corresponding ```*.avg``` files.
+
+
+### Error
+
+[node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_ess_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
+[node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_plm_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
+[node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_ras_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
+-------------------------------------------------------
+Primary job  terminated normally, but 1 process returned
+a non-zero exit code.. Per user-direction, the job has been aborted.
+-------------------------------------------------------
+--------------------------------------------------------------------------
+mpirun detected that one or more processes exited with non-zero status, thus causing
+the job to be terminated. The first process to do so was:
+
+  Process name: [[43770,1],2]
+  Exit code:    255
