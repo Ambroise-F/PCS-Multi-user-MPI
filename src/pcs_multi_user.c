@@ -17,12 +17,16 @@
 #define FF fflush(stdout)
 #define qp(a) printf("%d",a);fflush(stdout)
 #define verbose 0
+#define ATT 0
 //#define SEED (time(null))
 //#define SEED 0xE5CA1ADE
 
 
 #define TAG_START 1
-#define TAG_THREAD_OFFSET 2 // tag associated with thread 0 is TAG_THREAD_OFFSET
+
+#define TAG_END 2
+
+#define TAG_THREAD_OFFSET 3 // start of the tag range for threads
 
 
 elliptic_curve_t E;
@@ -35,6 +39,18 @@ mpz_t X_res[__NB_USERS__]; // One x per user
 point_t M[__NB_ENSEMBLES__]; // precomputed a*P values
 uint8_t trailling_bits;
 uint8_t nb_bits;
+int world_size;
+
+mpz_t xtrue[__NB_USERS__];
+
+
+
+
+void set_seed()
+{
+	SEED = SEED_;
+	printf("seed : %lx\n",SEED);
+}
 
 /** Determines whether a point is a distinguished one.
 *
@@ -130,8 +146,7 @@ int is_collision_mu(mpz_t x, mpz_t b1, uint16_t userid1, mpz_t b2, uint16_t user
 		f(R, M[r], &R, E);
 	}
 
-
-	// debug
+	//gmp_printf("(a1,b1,a2,b2,n) = (%Zd,%Zd,%Zd,%Zd,%Zd)\n",a1,b1,a2,b2,n);
 	/*
 	if (userid1==2771)
 	  {
@@ -161,6 +176,17 @@ int is_collision_mu(mpz_t x, mpz_t b1, uint16_t userid1, mpz_t b2, uint16_t user
 
 	// end debug
 	*/
+	/*
+	printf("%d-%d\n",userid1,userid2);
+	if (userid1==userid2)
+	{
+		gmp_printf("(a1,b1,a2,b2,n,x) = (%Zd,%Zd,%Zd,%Zd,%Zd,",a1,b1,a2,b2,n);
+	}
+	else
+	{
+		gmp_printf("(a1,b1,a2,b2,n,x2,x) = (%Zd,%Zd,%Zd,%Zd,%Zd,%Zd,",a1,b1,a2,b2,n,X_res[userid2]);
+	}
+	*/
 
 	if(userid1==userid2 && (mpz_cmp(b1, b2) != 0)) //two different pairs with the same Q, so collision
 	{
@@ -186,13 +212,25 @@ int is_collision_mu(mpz_t x, mpz_t b1, uint16_t userid1, mpz_t b2, uint16_t user
 		compute_x_2users(x, a1, a2, b1, b2, X_res[userid2], n);
 		retval = 1;
 	}
+
+	if (mpz_cmp(xtrue[userid1],x))
+	{
+		printf("erreur : \n");
+		gmp_printf("(a1,b1,a2,b2,n,x1,x2,xT) = (%Zd,%Zd,%Zd,%Zd,%Zd,%Zd,%Zd,%Zd)\n",a1,b1,a2,b2,n,x,X_res[userid2],xtrue[userid1]);
+	}
+
+
+
+
 	point_clear(&R);
 	mpz_clears(a1, a2, xDist_, NULL);
+
+
 	return retval;
 }
 
 
-char * pack(size_t * size_v,int thread_num, uint16_t userid1, mpz_t b, mpz_t xDist, int nb_bits, int trailing_bits)
+char * pack_(size_t * size_v,int thread_num, uint16_t userid1, mpz_t b, mpz_t xDist, int nb_bits, int trailing_bits)
 {
 	size_t size_vect,size_b,size_x;
 	char *vect;
@@ -208,8 +246,8 @@ char * pack(size_t * size_v,int thread_num, uint16_t userid1, mpz_t b, mpz_t xDi
 
 	vect = malloc(*size_v);
 
-	mpz_export(vect+sizeof(int)+sizeof(uint16_t),NULL,1,1,1,0,b);
-	mpz_export(vect+sizeof(int)+sizeof(uint16_t)+size_b,NULL,1,1,1,0,xDist);
+	mpz_export(vect+sizeof(int)+sizeof(uint16_t),NULL,1,1,-1,0,b);
+	mpz_export(vect+sizeof(int)+sizeof(uint16_t)+size_b,NULL,1,1,-1,0,xDist);
 
 	for (i=0;i<sizeof(int);i++)
 	{
@@ -222,13 +260,68 @@ char * pack(size_t * size_v,int thread_num, uint16_t userid1, mpz_t b, mpz_t xDi
 	return vect;
 }
 
+char * pack(size_t * size_v,int thread_num, uint16_t userid1, mpz_t b, mpz_t xDist, int nb_bits, int trailing_bits)
+{
+	/*
+	 [----]        [--]     [-][-]     [.?.]    [.?.]
+	  int         uint16    2*char     mpz_t    mpz_t
+	thread_num    userid1  size_b/x      b        x
+	*/
+	size_t size_vect,size_b,size_x;
+	size_t bsize_b,bsize_x;
+	char *vect;
+	int i;
+
+	bsize_b = mpz_sizeinbase(b,2);
+	bsize_x = mpz_sizeinbase(xDist,2);
+
+	size_b = (unsigned char)((bsize_b-1)/8)+1;
+	size_x = (unsigned char)((bsize_x-1)/8)+1;
+
+	*size_v = 2*sizeof(unsigned char);
+	*size_v+= sizeof(int);
+	*size_v+= sizeof(uint16_t);
+	*size_v+= size_b + size_x;
+
+	vect = malloc(*size_v);
+
+	mpz_export(vect+2*sizeof(unsigned char)+sizeof(int)+sizeof(uint16_t),NULL,1,1,-1,0,b);
+	mpz_export(vect+2*sizeof(unsigned char)+sizeof(int)+sizeof(uint16_t)+size_b,NULL,1,1,-1,0,xDist);
+
+	for (i=0;i<sizeof(int);i++)
+	{
+		vect[i] = (thread_num>>((sizeof(int)-1-i)*8))&0xff; // 0-3 1-4
+	}
+	for (i=0;i<sizeof(uint16_t);i++)
+	{
+		vect[i+sizeof(int)] = (userid1>>((sizeof(uint16_t)-1-i)*8))&0xff;
+	}
+	for (i=0;i<sizeof(unsigned char);i++)
+	{
+		vect[i+sizeof(int)+sizeof(uint16_t)] = 0xff&(unsigned char)size_b;
+	}
+	for (i=0;i<sizeof(unsigned char);i++)
+	{
+		vect[i+sizeof(int)+sizeof(uint16_t)+sizeof(unsigned char)] = 0xff&(unsigned char)size_x;
+	}
+	return vect;
+}
+
+
+
+
 int unpack(char * vect ,int *thread_num, uint16_t *userid1, mpz_t b, mpz_t xDist, int nb_bits, int trailing_bits)
 {
+	/*
+	 [----]        [--]     [-][-]     [.?.]    [.?.]
+		int         uint16    2*char     mpz_t    mpz_t
+	thread_num    userid1  size_b/x      b        x
+	*/
 	size_t size_b,size_x;
 	int i;
 	i=0;
-	size_b = (int)((nb_bits-1)/8)+1;
-	size_x = (int)((nb_bits-1-trailing_bits)/8)+1;
+//	size_b = (int)((nb_bits-1)/8)+1;
+//	size_x = (int)((nb_bits-1-trailing_bits)/8)+1;
 	*thread_num = 0;
 	for (i;i<sizeof(int);i++)
 	{
@@ -241,10 +334,36 @@ int unpack(char * vect ,int *thread_num, uint16_t *userid1, mpz_t b, mpz_t xDist
 		*userid1 <<= 8;
 		*userid1 += vect[i]&0xff;
 	}
-	mpz_import(b,size_b,1,1,1,0,vect+i);
+	for (i;i<sizeof(int)+sizeof(uint16_t)+sizeof(unsigned char);i++)
+	{
+		size_b = (size_t)vect[i]&0xff;
+	}
+	for (i;i<sizeof(int)+sizeof(uint16_t)+2*sizeof(unsigned char);i++)
+	{
+		size_x = (size_t)vect[i]&0xff;
+	}
+	mpz_import(b,size_b,1,1,-1,0,vect+i);
 	i+=size_b;
-	mpz_import(xDist,size_x,1,1,1,0,vect+i);
+	mpz_import(xDist,size_x,1,1,-1,0,vect+i);
 	return i+size_x;
+}
+
+int generate_random_b(mpz_t b, int nb_bits, gmp_randstate_t r_state)
+{
+	mpz_t p2,nbits,two;
+	mpz_inits(p2,nbits,two,NULL);
+	mpz_set_ui(nbits, nb_bits-2);
+	mpz_set_ui(two,2);
+	mpz_powm(p2,two,nbits,n);
+
+	mpz_urandomb(b, r_state, nb_bits-2);
+	mpz_add(b, b, p2); // b = b + 2**nb_bits-2
+	while(mpz_cmp(b,n)>0)
+	{
+		mpz_urandomb(b, r_state, nb_bits-2);
+		mpz_add(b, b, p2); // b = 2 * b
+	} // fonction pour random b ??? -> pile nb_bits-1 bits mais < n
+	mpz_clears(p2,nbits,two,NULL);
 }
 
 /** Initialize all variables needed to do a PCS algorithm.
@@ -384,11 +503,12 @@ void pcs_mu_init_server(
                    int type_struct,
                    int nb_threads,
                    uint8_t level,
-                   int world_size)
+                   int world_size_init)
 {
 		uint8_t i; //  __NB_ENSEMBLES__
 		int j; // __NB_USERS__
 		uint16_t user;
+		world_size = world_size_init;
 
 
 		point_init(&P);
@@ -582,12 +702,13 @@ long long int pcs_mu_run_order(mpz_t x_res[__NB_USERS__], int nb_threads, unsign
 	return 0;
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads, unsigned long long int times[__NB_USERS__],unsigned long int pts_per_users[__NB_USERS__])
 {
 	char * payload;
 	MPI_Status status;
-	int tag,thread_num,coll;
+	int tag,thread_num,coll,i;
 	uint16_t userid1,userid2,current_user;
 	int resp;
 	mpz_t b, b2;
@@ -597,46 +718,50 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 	unsigned long int nb_pts;
 	unsigned long long int time1,time2;
 	unsigned char end;
+	MPI_Request req;
+	int reqflag;
 
   mpz_inits(b,b2,xDist,NULL);
 	current_user = 0;
 	nb_pts = 0;
 	end = 0;
 	int payload_size;
-	payload_size = sizeof(int)+sizeof(uint16_t)+(int)((nb_bits-1)/8)+1+(int)((nb_bits-1-trailling_bits)/8)+1;
+	payload_size = 2*sizeof(unsigned char)+sizeof(int)+sizeof(uint16_t)+(int)((nb_bits-1)/8)+1+(int)((nb_bits-1-trailling_bits)/8)+1;
 	payload = malloc(payload_size); // size of thread_num (int), userid (uint_16), b and xDist (mpz_t)
 
 	gettimeofday(&tv1,NULL);
+
 	while(!end)
 	{
-		MPI_Recv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&status);
-		unpack(payload,&thread_num,&userid1,b,xDist,nb_bits,trailling_bits);
-		tag = thread_num + TAG_THREAD_OFFSET;
-		/*
-		MPI_Recv(&thread_num, 1, MPI_INT,      MPI_ANY_SOURCE,    TAG_START, MPI_COMM_WORLD, &status); // should be Irecv to allow multithreaded storing
-		//printf("S : recv thread_num : %d\n",thread_num);
-		tag = thread_num + TAG_THREAD_OFFSET;
-		MPI_Recv(&userid1,    1, MPI_UNSIGNED, status.MPI_SOURCE, tag,       MPI_COMM_WORLD, &status);
-		//printf("S : recv userid1 : %u\n",userid1);
-
-		recv_mpz_var(b,		  status.MPI_SOURCE, tag, 0);
-
-		recv_mpz_var(xDist, status.MPI_SOURCE, tag, 0);
-
-		*/
-		coll = struct_add_mu(b2,&userid2,b,userid1,xDist,xDist_str);
-
-		//printf("coll : %d\n",coll );
-		nb_pts++;
-
-		if (coll)
+		//MPI_Recv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&status);
+		MPI_Irecv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&req);
+		reqflag = 0;
+		while(!reqflag)
 		{
-			if(is_collision_mu(x, b, userid1, b2, userid2, trailling_bits))
+			MPI_Test(&req,&reqflag,&status);
+			if (ATT) printf("ATTENTE IRECV TO ANY THREAD                               \r");FF;
+		}
+
+
+		unpack(payload,&thread_num,&userid1,b,xDist,nb_bits,trailling_bits);
+	//printf("%d",thread_num);
+		tag = thread_num + TAG_THREAD_OFFSET;
+			//gmp_printf("payload<: %-10x,%-10x,%-10Zx,%-10Zd\n",thread_num,userid1,b,xDist);
+
+		resp = current_user;
+		if (userid1 == current_user)
+		{
+			coll = struct_add_mu(b2,&userid2,b,userid1,xDist,xDist_str);
+		  //printf("coll : %d\n",coll );
+			nb_pts++;
+			if (coll)
 			{
-				//gmp_printf("b = %Zd, b2 = %Zd, lp = %Zd\n",b,b2,n);
-				mpz_init_set(x_res[userid1],x);
-				if (userid1==current_user)
+			//printf("coll %d-%d\n",userid1,userid2);
+			//gmp_printf("(b,b2,n,x2) = (%Zd,%Zd,%Zd,%Zd)\n",b,b2,n,x_res[userid2]);
+				if(is_collision_mu(x, b, userid1, b2, userid2, trailling_bits))
 				{
+					//gmp_printf("b = %Zd, b2 = %Zd, lp = %Zd\n",b,b2,n);
+					mpz_init_set(x_res[userid1],x);
 					gettimeofday(&tv2,NULL);
 					mpz_init_set(X_res[userid1],x);
 					pts_per_users[userid1] = nb_pts;
@@ -646,24 +771,36 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 					gettimeofday(&tv1,NULL);
 
 					nb_pts = 0;
+					printf("found user %d\r",current_user);FF;
 					current_user++;
 					resp = current_user;
-
 				}
 			}
-		}
-		else
-		{
-			resp = current_user; // we stay on the same user since no collision
 		}
 		if (current_user==__NB_USERS__)
 		{
 			end = 1;
 			resp = -1;
+
 		}
-		//printf("S : sending resp = %-3d\n",resp);
-		MPI_Send(&resp,1,MPI_INT,status.MPI_SOURCE, tag, MPI_COMM_WORLD);
+		//MPI_Send(&resp,1,MPI_INT,status.MPI_SOURCE, tag, MPI_COMM_WORLD);
+
+		MPI_Isend(&resp,1,MPI_INT,status.MPI_SOURCE,tag, MPI_COMM_WORLD, &req);
+		reqflag = 0;
+		while(!reqflag)
+		{
+			MPI_Test(&req,&reqflag,NULL);
+			if (ATT) printf("ATTENTE ISEND TO THREAD %d                \r",status.MPI_SOURCE);FF;
+		}
+
 	}
+	int end_int;
+	end_int = 1;
+	for (i=1;i<world_size;i++)
+	{
+		MPI_Send(&end_int,1,MPI_INT,i,TAG_END,MPI_COMM_WORLD);
+	}
+	//printf("\n");
 }
 
 /** Run the PCS algorithm.
@@ -693,133 +830,130 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 	//for (userid1=0; userid1<__NB_USERS__; userid1++)
 
 	end = 0;
-	#pragma omp parallel private(userid1,R, b, r, xDist, xDist_str, trail_length,thread_num,tag,req,flagreq) shared(end, trail_length_max) num_threads(nb_threads)
+
+
+	#pragma omp parallel private(userid1,R, b, r, xDist, xDist_str, trail_length,thread_num,tag,req,flagreq) shared(end, trail_length_max) num_threads(nb_threads+1)
 	{
-
-		userid1=0;
-		int resp;
 		thread_num = omp_get_thread_num();
-		point_init(&R);
-		mpz_inits(b, xDist, NULL);
-
-		//Initialize a starting point
-		gmp_randstate_t r_state;
-		gmp_randinit_default(r_state);
-		//printf("seed = %d\n",(SEED<<16)+(omp_get_thread_num()<<8)+(world_rank));
-		gmp_randseed_ui(r_state, (SEED<<16)+(omp_get_thread_num()<<8)+(world_rank));
-		mpz_urandomb(b, r_state, nb_bits); // random b
-		double_and_add(&R, Q[userid1], b, E); // R = bQi
-		trail_length = 0;
-		while(!end)
+		if (!thread_num)
 		{
-			if(is_distinguished_mu(R, trailling_bits, &xDist)) // xDist = R.x >> trailling_bits
+			int end_resp,end_flag;
+			MPI_Request end_req;
+			MPI_Status end_status;
+			MPI_Irecv(&end_resp, 1, MPI_INT, 0, TAG_END, MPI_COMM_WORLD,&end_req);
+			end_flag = 0;
+			while(!end_flag && !end)
 			{
-				//printf("dist point!\n");fflush(stdout);
-				//printf(".");FF;
-
-				// send (userid1, b, xDist) to server
-				//printf("." );FF;
-
-				//----MPI_Send(&thread_num, 1,   MPI_INT,      0,   TAG_START,   MPI_COMM_WORLD);
-
-				// build package with thread_num, userid1, b, xDist and send it at once with MPI_Isend
-				// receive the reply with MPI_Recv
-				char * payload;
-				size_t size_vect;
-
-
-				//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thread_num,userid1,b,xDist);
-				payload = pack(&size_vect,thread_num, userid1, b, xDist, nb_bits, trailling_bits);
-				//printf("size_vect = %ld (should be 4+2+4+3 = 13)\n",size_vect);
-
-
-				//mpz_inits(bb,xx,NULL);
-				//unpack(payload,&thr,&user,bb,xx,nb_bits,trailling_bits);
-				//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thr,user,bb,xx);
-
-				MPI_Isend(payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
-
-				flagreq = 0;
-				while(!flagreq && !end) // while not sent and not finished
-	      {
-					MPI_Test(&req,&flagreq,NULL);
-	      }
-				if(end)
-				{
-					break;
-				}
-
-				free(payload);
-				tag = thread_num + TAG_THREAD_OFFSET;
-				MPI_Irecv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,&req);
-				flagreq = 0;
-				while(!flagreq && !end) // while not received and not finished
-	      {
-					MPI_Test(&req,&flagreq,NULL);
-	      }
-				if(end)
-				{
-					break;
-				}
-
-				/*
-				MPI_Isend(&thread_num, 1,   MPI_INT,      0,   TAG_START,   MPI_COMM_WORLD,&req);
-
-
-				flagreq = 0;
-				while(!flagreq && !end) // while not sent and not finished
-	      {
-					MPI_Test(&req,&flagreq,NULL);
-	      }
-				if(end)
-				{
-					break;
-				}
-
-				tag = thread_num + TAG_THREAD_OFFSET;
-				MPI_Send(&userid1,    1,   MPI_UNSIGNED, 0,   tag, MPI_COMM_WORLD);
-				//printf("sent userid1\n");
-				send_mpz_var(b,0,tag);
-				//gmp_printf("sent b = %Zd\n",b);
-				send_mpz_var(xDist,0,tag);
-				//printf("sent xDist\n");
-				MPI_Recv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-				//printf("received resp : %d\n",resp);
-				*/
-				if (resp==-1) // si resp est à -1 c'est terminé, sinon userid1 = resp
-				{
-					end = 1;
-				}
-				else
-				{
-					userid1 = (uint16_t)resp;
-					mpz_urandomb(b, r_state, nb_bits);
-					double_and_add(&R, Q[userid1], b, E); // new start, R = bQi
-					trail_length = 0;
-				}
-				// if(struct_add_mu(b2, &userid2, b, userid1, xDist, xDist_str)) // ajout de b dans la mémoire, b2 = b d'un autre point avec collision
-				// if(is_collision_mu(x, b, userid1, b2, userid2, trailling_bits,x_true[userid1])) // si b et b2 forment une vraie collision
+				MPI_Test(&end_req,&end_flag,&end_status);
+				//printf("ATTENTE THREAD STOP                                   \r");FF;
 			}
-			else // R n'est pas un pt dist.
-			{
-				r=hash(R.y); // y%20
-				f(R, M[r], &R, E); // 1 step (among 20) of the path
-
-				trail_length++;
-				if(trail_length > trail_length_max)
-				{
-					mpz_urandomb(b, r_state, nb_bits); // new random start
-					double_and_add(&R, Q[userid1], b, E);
-					trail_length = 0;
-				}
-
-			}
+			end=1;
 		}
+		else
+		{
+			userid1=0;
+			int resp;
+			point_init(&R);
+			mpz_inits(b, xDist, NULL);
 
-		point_clear(&R);
-		mpz_clears(b, xDist, NULL);
-		gmp_randclear(r_state);
-	} // end omp parallel
+			//Initialize a starting point
+			gmp_randstate_t r_state;
+			gmp_randinit_default(r_state);
+			//printf("seed = %d\n",(SEED<<16)+(omp_get_thread_num()<<8)+(world_rank));
+			gmp_randseed_ui(r_state, (SEED<<16)+(omp_get_thread_num()<<8)+(world_rank));
+			//printf("stseed = %d\n", (SEED<<16)+(omp_get_thread_num()<<8)+(world_rank));
+			//mpz_urandomb(b, r_state, nb_bits); // random b
+			//mpz_mod(b,b,n);
+			generate_random_b(b,nb_bits,r_state);
+			double_and_add(&R, Q[userid1], b, E); // R = bQi
+			trail_length = 0;
+			while(!end)
+			{
+				if(is_distinguished_mu(R, trailling_bits, &xDist)) // xDist = R.x >> trailling_bits
+				{
+					/*
+					// build package with thread_num, userid1, b, xDist and send it at once with MPI_Isend
+					// receive the reply with MPI_Recv
+					*/
+					char * payload;
+					size_t size_vect;
+
+
+						//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zd\n",thread_num,userid1,b,xDist);
+
+					payload = pack(&size_vect,thread_num, userid1, b, xDist, nb_bits, trailling_bits);
+					/*
+					//printf("size_vect = %ld (should be 4+2+4+3 = 13)\n",size_vect);
+					//mpz_inits(bb,xx,NULL);
+					//unpack(payload,&thr,&user,bb,xx,nb_bits,trailling_bits);
+					//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thr,user,bb,xx);
+					*/
+					MPI_Isend(payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
+					flagreq = 0;
+					while(!flagreq && !end) // while not sent and not finished
+					{
+						MPI_Test(&req,&flagreq,NULL);
+						//printf("ATTENTE ISEND THREAD %d                      \r",thread_num);FF;
+					}
+					if(end)
+					{
+						break;
+					}
+					free(payload);
+					tag = thread_num + TAG_THREAD_OFFSET;
+					MPI_Irecv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,&req);
+					flagreq = 0;
+					while(!flagreq && !end) // while not received and not finished
+					{
+						MPI_Test(&req,&flagreq,NULL);
+						//printf("ATTENTE IRECV THREAD %d                    \r",thread_num);FF;
+					}
+					if(end)
+					{
+						break;
+					}
+
+					if (resp==-1) // si resp est à -1 c'est terminé, sinon userid1 = resp
+					{
+						#pragma omp critical
+						{
+							end = 1;
+						}
+					}
+					else
+					{
+						userid1 = (uint16_t)resp;
+						generate_random_b(b,nb_bits,r_state);
+						double_and_add(&R, Q[userid1], b, E); // new start, R = bQi
+						trail_length = 0;
+					}
+				}
+				else // R n'est pas un pt dist.
+				{
+					r=hash(R.y); // y%20
+					f(R, M[r], &R, E); // 1 step (among 20) of the path
+
+					trail_length++;
+					if(trail_length > trail_length_max)
+					{
+						//mpz_urandomb(b, r_state, nb_bits); // new random start
+						//mpz_mod(b,b,n);
+						generate_random_b(b,nb_bits,r_state);
+
+						double_and_add(&R, Q[userid1], b, E);
+						trail_length = 0;
+					}
+				}
+	    }
+
+			point_clear(&R);
+			mpz_clears(b, xDist, NULL);
+			gmp_randclear(r_state);
+		}
+		//printf("fin thread n°%d\n",thread_num);
+	}
+// end parallel search
+
 	//printf("user %d : %lu pts\n",userid1,pts_per_users[userid1]);
 	return 0;
 }
@@ -986,4 +1120,14 @@ int recv_mpz_var(mpz_t a, int src, int tag, int init)
 	mpz_import(a,(int)count,1,1,1,0,a_char);
 	free(a_char);
 	return 0;
+}
+
+void dbg_init_xtrue(mpz_t xtrue_init[__NB_USERS__])
+{
+	int i;
+	for (i=0;i<__NB_USERS__;i++)
+	{
+		mpz_init(xtrue[i]);
+		mpz_set(xtrue[i],xtrue_init[i]);
+	}
 }

@@ -5,14 +5,19 @@
 #include <mpi.h>
 #include "pcs.h"
 
-#define __NB_USERS__ 10
+#define __NB_USERS__ ((1<<16)-4)
 //#define __NB_USERS__ 1
 
 
-//#define SEED (time(NULL))
-//#define SEED 0xe5ca1ade
-#define SEED (time(NULL)^0xcafebabe)
-//void combLin(point_t * R, mpz_t a, mpz_t b);
+//#define SEED_ (time(NULL))
+#define SEED_ (time(NULL)^0xcafebabe)
+//#define SEED_ 0x9469bfc9
+//#define SEED_ 0x94685a71
+
+
+long int SEED;
+
+void set_seed();
 
 void pcs_mu_init(point_t P_init,
                    point_t Q_init[__NB_USERS__],
@@ -78,3 +83,4 @@ void pcs_mu_init_client(
 
 void pcs_mu_clear_server();
 void pcs_mu_clear_client();
+void dbg_init_xtrue(mpz_t xtrue_init[__NB_USERS__]);

@@ -187,7 +187,12 @@ int main(int argc,char * argv[])
 	/***********************************************************************/
 
 	// MPI INIT
-	MPI_Init(&argc,&argv);
+	int required = MPI_THREAD_MULTIPLE;
+	int provided = 0;
+	MPI_Init_thread(&argc,&argv,required,&provided);
+	if (provided!=required)
+		exit(-1);
+
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
@@ -199,11 +204,19 @@ int main(int argc,char * argv[])
 
 	/***********************************************************************/
 
+	if(!world_rank)
+	{
+		set_seed();
+	}
 
-
+	share_var(SEED,MPI_LONG);
+	//printf("seed : %lx\n",(long int)SEED);
 
 	nb_threads = omp_get_max_threads(); // NBTHREADS
-
+	if(!world_rank)
+	{
+		printf("max threads : %d\n",nb_threads);
+	}
 
 
 	nb_tests = 1;
@@ -238,12 +251,7 @@ int main(int argc,char * argv[])
 
 	if(!world_rank)
 	{
-		printf("Using %d threads (max_threads)\n",nb_threads);
-		mpz_t tt;
-		mpz_init_set_str(tt,"abcdefabcdefabcdefabcdefabcdefabcdef",16);
-		printf("size of : %ld\n",sizeof(tt));
-		printf("size of * : %ld\n",sizeof(*tt));
-		printf("size of & : %ld\n",sizeof(&tt));
+		printf("Using %d threads\n",nb_threads);
 	}
 
 	if(trailling_bits == 0)
@@ -298,20 +306,31 @@ int main(int argc,char * argv[])
 		mpz_set_str(E.B, str_B, 10);
 		mpz_set_str(E.p, str_p, 10);
 		mpz_set_str(large_prime, str_large_prime, 10);
-
-		seed = time(NULL);
-
 	}
 
-
 	share_mpz_var(large_prime,world_rank,1);
-	share_int(seed);
 
-	generate_adding_sets(A, large_prime ,seed);
+	//gmp_printf("n%d : %Zd\n",world_rank,large_prime);
+	//printf("seed : %d\n",seed);
+
+	generate_adding_sets(A, large_prime ,SEED^0xADDED);
+
+	/*
+	for (test_i=0;test_i<20;test_i++)
+	{
+		gmp_printf("A%d[%d] : %Zd\n",world_rank,test_i,A[test_i]);
+		MPI_Barrier(MPI_COMM_WORLD);
+	}
+	printf("\n");
+	*/
+
+
 
 	share_mpz_var(E.A,world_rank,1);
 	share_mpz_var(E.B,world_rank,1);
 	share_mpz_var(E.p,world_rank,1);
+
+	//gmp_printf("E%d : %Zd %Zd %Zd\n",world_rank,E.A,E.B,E.p);
 
 
 	test_i = 0;
@@ -346,24 +365,23 @@ int main(int argc,char * argv[])
 		share_mpz_var(P.y,world_rank,1);
 		share_mpz_var(P.z,world_rank,1);
 
+		//gmp_printf("P%d : %Zd %Zd %Zd\n",world_rank,P.x,P.y,P.z);
 
-		if (!world_rank)
-		{
-			seed = time(NULL) + test_i<<24;
-		}
-		share_var(seed,MPI_UNSIGNED);
 
+
+		//printf("nb_bits = %d\n",nb_bits);
+		//gmp_printf("n = %Zd\n",large_prime);
 		for (int_i=0;int_i<__NB_USERS__;int_i++)
 		{
 			//choose a key of size: nb_bits
-			generate_random_key(key, nb_bits - 1, ~seed+(int_i<<16), large_prime);
+			generate_random_key(key, nb_bits - 1, ((SEED + test_i<<24)^0x5ad8f449)+(int_i<<16), large_prime);
 			//compute Q
 			mpz_init_set(keys[int_i],key);
-			//gmp_printf("Key n°%d : %Zd\n",int_i,key);
 			double_and_add(&Q[int_i], P, key, E);
 			//gmp_printf("wr %d - keys[%d] = %Zd\n",world_rank,int_i,keys[int_i]);
 			//MPI_Barrier(MPI_COMM_WORLD);
 		}
+		dbg_init_xtrue(keys);
 		/******* BEGIN: Setting up environment for experiment running and statistics *******/
 
 		/*** Update possible values of argument f (field/nb_bits) in experiments ***/
@@ -593,7 +611,6 @@ int main(int argc,char * argv[])
 				}
 				else
 				{
-					pcs_mu_clear_server();
 					for (key_i = 0; key_i<__NB_USERS__; key_i++)
 					{
 						ok = 1;
@@ -606,8 +623,9 @@ int main(int argc,char * argv[])
 						{
 							ok = 0;
 							//fprintf(stderr, "Error in PCS computation.\n");
-							printf("key n°%d is false - ERROR\n",key_i);
-							gmp_printf("key was %Zd - result is %Zd\n",keys[key_i],xs[key_i]);
+							printf("\033[0;31mkey n°%d is false - ERROR\n",key_i);
+							gmp_printf("key was %Zd - result is %Zd\033[0m\n",keys[key_i],xs[key_i]);
+							printf("seed was %lx\n",(unsigned long int)SEED);
 							//exit(2);
 							break;
 						}
@@ -615,7 +633,7 @@ int main(int argc,char * argv[])
 					printf("\n");
 					if(ok)
 					{
-						printf("Toutes les clés ont été trouvées\n");
+						printf("\033[0;32mToutes les clés ont été trouvées\033[0m\n");
 					}
 					else
 					{
