@@ -51,6 +51,7 @@ The script ```refresh_avg.sh``` computes average values for each existing config
 
 ### Error
 
+```
 [node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_ess_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
 [node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_plm_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
 [node005:65686] mca: base: component_find: unable to open /cm/shared/apps/openmpi/gcc/64/1.10.7/lib64/openmpi/mca_ras_tm: libpbs.so.0: cannot open shared object file: No such file or directory (ignored)
@@ -64,3 +65,4 @@ the job to be terminated. The first process to do so was:
 
   Process name: [[43770,1],2]
   Exit code:    255
+```
