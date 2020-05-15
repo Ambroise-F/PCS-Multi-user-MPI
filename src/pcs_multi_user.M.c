@@ -734,17 +734,11 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 	while(!end)
 	{
 		//MPI_Recv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&status);
-		#pragma omp critical (mpi_call)
-		{
-			MPI_Irecv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&req);
-		}
+		MPI_Irecv(payload,payload_size,MPI_CHAR, MPI_ANY_SOURCE, TAG_START, MPI_COMM_WORLD,&req);
 		reqflag = 0;
 		while(!reqflag)
 		{
-			#pragma omp critical (mpi_call)
-			{
-				MPI_Test(&req,&reqflag,&status);
-			}
+			MPI_Test(&req,&reqflag,&status);
 			if (ATT) printf("ATTENTE IRECV TO ANY THREAD                               \r");FF;
 		}
 
@@ -791,17 +785,11 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 		}
 		//MPI_Send(&resp,1,MPI_INT,status.MPI_SOURCE, tag, MPI_COMM_WORLD);
 
-		#pragma omp critical (mpi_call)
-		{
-			MPI_Isend(&resp,1,MPI_INT,status.MPI_SOURCE,tag, MPI_COMM_WORLD, &req);
-		}
+		MPI_Isend(&resp,1,MPI_INT,status.MPI_SOURCE,tag, MPI_COMM_WORLD, &req);
 		reqflag = 0;
 		while(!reqflag)
 		{
-			#pragma omp critical (mpi_call)
-			{
-				MPI_Test(&req,&reqflag,NULL);
-			}
+			MPI_Test(&req,&reqflag,NULL);
 			if (ATT) printf("ATTENTE ISEND TO THREAD %d                \r",status.MPI_SOURCE);FF;
 		}
 
@@ -810,10 +798,7 @@ long long int pcs_mu_run_order_server(mpz_t x_res[__NB_USERS__], int nb_threads,
 	end_int = 1;
 	for (i=1;i<world_size;i++)
 	{
-		#pragma omp critical (mpi_call)
-		{
-			MPI_Send(&end_int,1,MPI_INT,i,TAG_END,MPI_COMM_WORLD);
-		}
+		MPI_Send(&end_int,1,MPI_INT,i,TAG_END,MPI_COMM_WORLD);
 	}
 	//printf("\n");
 }
@@ -855,17 +840,11 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 			int end_resp,end_flag;
 			MPI_Request end_req;
 			MPI_Status end_status;
-			#pragma omp critical (mpi_call)
-			{
-				MPI_Irecv(&end_resp, 1, MPI_INT, 0, TAG_END, MPI_COMM_WORLD,&end_req);
-			}
+			MPI_Irecv(&end_resp, 1, MPI_INT, 0, TAG_END, MPI_COMM_WORLD,&end_req);
 			end_flag = 0;
 			while(!end_flag && !end)
 			{
-				#pragma omp critical (mpi_call)
-				{
-					MPI_Test(&end_req,&end_flag,&end_status);
-				}
+				MPI_Test(&end_req,&end_flag,&end_status);
 				//printf("ATTENTE THREAD STOP                                   \r");FF;
 			}
 			end=1;
@@ -909,17 +888,11 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 					//unpack(payload,&thr,&user,bb,xx,nb_bits,trailling_bits);
 					//gmp_printf("payload : %-10x,%-10x,%-10Zx,%-10Zx\n",thr,user,bb,xx);
 					*/
-					#pragma omp critical (mpi_call)
-					{
-						MPI_Isend(payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
-					}
+					MPI_Isend(payload, size_vect,   MPI_CHAR,      0,   TAG_START,   MPI_COMM_WORLD,&req);
 					flagreq = 0;
 					while(!flagreq && !end) // while not sent and not finished
 					{
-						#pragma omp critical (mpi_call)
-						{
-							MPI_Test(&req,&flagreq,NULL);
-						}
+						MPI_Test(&req,&flagreq,NULL);
 						//printf("ATTENTE ISEND THREAD %d                      \r",thread_num);FF;
 					}
 					if(end)
@@ -928,17 +901,11 @@ long long int pcs_mu_run_order_client(int nb_threads, int world_rank)
 					}
 					free(payload);
 					tag = thread_num + TAG_THREAD_OFFSET;
-					#pragma omp critical (mpi_call)
-					{
-						MPI_Irecv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,&req);
-					}
+					MPI_Irecv(&resp,1,MPI_INT,0,tag,MPI_COMM_WORLD,&req);
 					flagreq = 0;
 					while(!flagreq && !end) // while not received and not finished
 					{
-						#pragma omp critical (mpi_call)
-						{
-							MPI_Test(&req,&flagreq,NULL);
-						}
+						MPI_Test(&req,&flagreq,NULL);
 						//printf("ATTENTE IRECV THREAD %d                    \r",thread_num);FF;
 					}
 					if(end)

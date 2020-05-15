@@ -196,7 +196,7 @@ int main(int argc,char * argv[])
 	/***********************************************************************/
 
 	// MPI INIT
-	int required = MPI_THREAD_SERIALIZED;
+	int required = MPI_THREAD_MULTIPLE;
 	int provided = 0;
 	MPI_Init_thread(&argc,&argv,required,&provided);
 	if (provided!=required)

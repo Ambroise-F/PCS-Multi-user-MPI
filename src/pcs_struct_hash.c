@@ -29,6 +29,7 @@ static unsigned long long int memory_limit;
  ***/
 
 
+
 /** Calculate the hash table recommended size.
  *
  *	@brief The recommended size corresponds to the expected number
@@ -36,12 +37,31 @@ static unsigned long long int memory_limit;
  *	(using the level parameter).
  *
  */
-void set_table_size(mpz_t n, uint8_t trailling_bits) // TODO : adapt this to mu ie expected nb of points for t users
+void set_table_size(mpz_t n, uint8_t trailling_bits)
 {
 	unsigned long long int distinguished;
 	mpz_t table_size_inter;
 	mpz_init(table_size_inter);
 	mpz_mul_ui(table_size_inter, n, __PI_NUMERATOR__);
+	mpz_tdiv_q_ui(table_size_inter, table_size_inter, 2 * __PI_DENOMINATOR__);
+	mpz_sqrt(table_size_inter, table_size_inter);
+	distinguished = (unsigned long int)pow(2, trailling_bits);
+	mpz_tdiv_q_ui(table_size_inter, table_size_inter, distinguished);
+	table_size = mpz_get_ui(table_size_inter);
+	mpz_clear(table_size_inter);
+}
+
+/** Multi-user version, number of expected points is multiplied by sqrt(__NB_USERS__)
+*
+*
+*/
+
+void set_table_size_mu(mpz_t n, uint8_t trailling_bits, uint16_t nb_users)
+{
+	unsigned long long int distinguished;
+	mpz_t table_size_inter;
+	mpz_init(table_size_inter);
+	mpz_mul_ui(table_size_inter, n, nb_users * __PI_NUMERATOR__);
 	mpz_tdiv_q_ui(table_size_inter, table_size_inter, 2 * __PI_DENOMINATOR__);
 	mpz_sqrt(table_size_inter, table_size_inter);
 	distinguished = (unsigned long int)pow(2, trailling_bits);
@@ -86,7 +106,7 @@ void struct_init_hash(uint8_t hash_type_init, mpz_t n, uint8_t trailling_bits, u
 }
 
 // **** Multi user **** //
-void struct_init_hash_mu(uint8_t hash_type_init, mpz_t n, uint8_t trailling_bits, uint8_t level)
+void struct_init_hash_mu(uint8_t hash_type_init, mpz_t n, uint8_t trailling_bits, uint8_t level, uint16_t nb_users)
 {
 	unsigned long int i;
 	hash_type = hash_type_init;
@@ -96,7 +116,7 @@ void struct_init_hash_mu(uint8_t hash_type_init, mpz_t n, uint8_t trailling_bits
     }
     else
     {
-        set_table_size(n, trailling_bits);
+        set_table_size_mu(n, trailling_bits,nb_users);
     }
 
 	printf("\t\ttable_size: %lu\n",table_size);
@@ -197,19 +217,22 @@ int struct_add_hash_mu(mpz_t a_out, uint16_t *userid2, mpz_t a_in, uint16_t user
 	hashUNIX_mu_t *next;
 	uint8_t retval = 0;
 
+
 	h = get_hash(xDist); // hash
 	omp_set_lock(&table_locks[h]); // lock thread on h (so 2 threads with the same h don't collide)
 	next = table_mu[h];
-    while(next != NULL && next-> key != NULL && strncmp(xDist, next->key, strlen(xDist)) > 0)
+	if (next!=NULL)
+	{
+	}
+  while(next != NULL && next-> key != NULL && strncmp(xDist, next->key, strlen(xDist)) > 0)
 	{
 		last = next;
 		next = next->next;
 	}
-
 	if(next != NULL && next->key != NULL && strcmp(xDist, next->key) == 0 ) //collision
 	{
 		mpz_set_str(a_out, next->a_, 62); // a_out from a_ (stored in string base62)
-                *userid2 =  next->user;
+    *userid2 =  next->user;
 		retval = 1;
 	}
 	else
@@ -318,7 +341,7 @@ void struct_free_hash_mu(void)
 	hashUNIX_mu_t *last;
 	hashUNIX_mu_t *next;
 
-    omp_destroy_lock(&memory_alloc_lock);
+  omp_destroy_lock(&memory_alloc_lock);
 	for(i = 0; i < table_size; i++)
 	{
 		next = table_mu[i];
@@ -327,7 +350,6 @@ void struct_free_hash_mu(void)
 		{
 			free(next->key);
 			free(next->a_);
-                        //free(next->user); //?
 			last = next;
 			next = next->next;
 			free(last);

@@ -5,8 +5,8 @@
 #include <mpi.h>
 #include "pcs.h"
 
-#define __NB_USERS__ ((1<<16)-4)
-//#define __NB_USERS__ 1
+//#define __NB_USERS__ ((1<<16)-4)
+#define __NB_USERS__ 16
 
 
 //#define SEED_ (time(NULL))
